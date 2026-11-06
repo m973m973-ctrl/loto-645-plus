@@ -12,3 +12,6 @@ android_loto/app/build/
 android_loto/local.properties
 my_combos.json
 analysis/predictions_log.json
+gh.zip
+gh_cli/
+gh_auth.log
