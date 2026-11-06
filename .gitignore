@@ -1,0 +1,14 @@
+__pycache__/
+build/
+dist/
+*.png
+*.jpg
+ui_dump.xml
+*.apk
+*.exe
+android_loto/.gradle/
+android_loto/build/
+android_loto/app/build/
+android_loto/local.properties
+my_combos.json
+analysis/predictions_log.json
