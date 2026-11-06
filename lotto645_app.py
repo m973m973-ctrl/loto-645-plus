@@ -39,6 +39,89 @@ LOG_NAME = "predictions_log.json"
 MY_NAME = "my_combos.json"
 
 
+# ---------- Сравнение лотерей ----------
+
+def _pmatch(n, k, d, j):
+    """Вероятность угадать ровно j из d выпавших, отметив k из n."""
+    from math import comb
+    return comb(d, j) * comb(n - d, k - j) / comb(n, k)
+
+
+def _p_ge(n, k, d, jmin):
+    return sum(_pmatch(n, k, d, j) for j in range(jmin, min(k, d) + 1))
+
+
+# (название, ставка ₽, [(приз ₽, вероятность)], суперприз 1 к N)
+# Призовые суммы — по опубликованным правилам, примерные (могут меняться).
+def _games():
+    g = []
+    # 5 из 36 (клава): 5 из 36 + 1 из 4
+    p = lambda j: _pmatch(36, 5, 5, j)
+    g.append(("5 из 36", 75, [(75, p(2)), (750, p(3)), (7500, p(4)),
+                              (100000, p(5) * 3 / 4)], 1507968))
+    # 6 из 45
+    p = lambda j: _pmatch(45, 6, 6, j)
+    g.append(("6 из 45", 50, [(50, p(2)), (400, p(3)), (2000, p(4)),
+                              (100000, p(5))], 8145060))
+    # 6 из 45 Плюс
+    g.append(("6 из 45 Плюс", 100, [(100, p(2)), (500, p(3)), (3000, p(4)),
+                                    (100000, p(5))], 8145060))
+    # 7 из 49
+    p = lambda j: _pmatch(49, 7, 7, j)
+    g.append(("7 из 49", 40, [(150, p(3)), (1500, p(4)), (15000, p(5)),
+                              (1500000, p(6))], 85900584))
+    # 4 из 20: приз от 2 совп. в одном поле; упрощённо по одному полю
+    p = lambda j: _pmatch(20, 4, 4, j)
+    g.append(("4 из 20", 250, [(250, p(2)), (1000, p(3)), (3000, p(4))],
+              23474025))
+    # Рапидо: 8 из 20 + 1 из 4
+    p = lambda j: _pmatch(20, 8, 8, j)
+    g.append(("Рапидо", 60, [(60, p(4) * 3 / 4), (200, p(5) * 3 / 4),
+                             (600, p(5) / 4), (1000, p(6) * 3 / 4),
+                             (3000, p(6) / 4), (4000, p(7) * 3 / 4),
+                             (15000, p(7) / 4), (60000, p(8) * 3 / 4)],
+              503880))
+    # Всё или ничего (12 из 24): симметрия j и 12-j
+    p = lambda j: _pmatch(24, 12, 12, j) + _pmatch(24, 12, 12, 12 - j)
+    g.append(("Всё или ничего", 100, [(100, p(4)), (300, p(3)),
+                                      (1500, p(2)), (15000, p(1))],
+              1352078))
+    return g
+
+
+def games_rating(min_prize):
+    """Рейтинг: шанс выигрыша не меньше min_prize ₽ за одну ставку."""
+    rows = []
+    for name, price, cats, jack in _games():
+        p = sum(prob for prize, prob in cats if prize >= min_prize)
+        if jack:  # суперприз заведомо больше порога
+            p += 1 / jack
+        rows.append((name, price, p, jack))
+    rows.sort(key=lambda r: -r[2])
+    return rows
+
+
+def games_text(min_prize):
+    lines = ["Шанс выиграть ≥ %d ₽ за одну ставку (лучшие сверху):" % min_prize]
+    for i, (name, price, p, jack) in enumerate(games_rating(min_prize), 1):
+        if p > 0:
+            lines.append("%d. %s (ставка %d ₽) — 1 к %.1f, "
+                         "суперприз 1 к %s" %
+                         (i, name, price, 1 / p,
+                          f"{jack:,}".replace(",", " ")))
+        else:
+            lines.append("%d. %s (ставка %d ₽) — призов ≥ %d ₽ нет, "
+                         "только суперприз 1 к %s" %
+                         (i, name, price, min_prize,
+                          f"{jack:,}".replace(",", " ")))
+    lines.append("Суммы призов примерные, по опубликованным правилам — "
+                 "могут меняться.")
+    return "\n".join(lines)
+
+
+
+
+
 def resource_path(name):
     """Файл данных: рядом со скриптом или внутри exe."""
     base = getattr(sys, "_MEIPASS", None)
@@ -352,6 +435,12 @@ class App(tk.Tk):
         super().__init__()
         self.title("6 из 45 Плюс — статистика")
         self.configure(bg=BG)
+        try:
+            ic = resource_path("loto.ico")
+            if ic:
+                self.iconbitmap(ic)
+        except Exception:
+            pass
         self.geometry("780x1180")
         self.minsize(720, 1120)
         self._build()
@@ -440,6 +529,22 @@ class App(tk.Tk):
         self.bet_out = tk.Label(self, text="", bg=BG, fg=FG,
                                 font=("Segoe UI", 9), justify="left")
         self.bet_out.pack(anchor="w", padx=16, pady=(2, 0))
+
+        # --- сравнение лотерей ---
+        cmpf = tk.Frame(self, bg=BG)
+        cmpf.pack(fill="x", padx=16, pady=(10, 0))
+        tk.Label(cmpf, text="Сравнение лотерей — мин. выигрыш, ₽:", bg=BG,
+                 fg=FG, font=("Segoe UI", 10, "bold")).pack(side="left")
+        self.cmp_min = tk.Entry(cmpf, width=6, bg=PANEL, fg=FG, relief="flat",
+                                font=("Segoe UI", 10), insertbackground=FG)
+        self.cmp_min.insert(0, "100")
+        self.cmp_min.pack(side="left", padx=6)
+        tk.Button(cmpf, text="Показать рейтинг", command=self._calc_games,
+                  bg=BLUE, fg="white", relief="flat", font=("Segoe UI", 9),
+                  padx=10, cursor="hand2").pack(side="left")
+        self.cmp_out = tk.Label(self, text="", bg=BG, fg=FG,
+                                font=("Segoe UI", 9), justify="left")
+        self.cmp_out.pack(anchor="w", padx=16, pady=(2, 0))
 
         # --- мои комбинации ---
         tk.Label(self, text="Мои комбинации — программа сама проверит их "
@@ -588,6 +693,16 @@ class App(tk.Tk):
                              % (ps[1], ps[2], ps[3], ps[4]))
         if log:
             self._render_log(log)
+
+    def _calc_games(self):
+        try:
+            mp = float(self.cmp_min.get().replace(",", "."))
+            if mp <= 0:
+                raise ValueError
+        except ValueError:
+            self.cmp_out.config(text="Введите сумму числом, например 100")
+            return
+        self.cmp_out.config(text=games_text(mp))
 
     # ---------- Мои комбинации ----------
 

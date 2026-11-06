@@ -135,6 +135,7 @@ class MainActivity : Activity() {
         if (logData.isNotEmpty()) addLogCard()
 
         addBetCard()
+        addGamesCard()
 
         root.addView(sectionLabel("Частоты чисел за последние 100 тиражей"))
         chart = FreqChartView(this)
@@ -150,6 +151,63 @@ class MainActivity : Activity() {
 
         // Обновляем виджет рабочего стола
         LotoWidgetProvider.updateAll(this)
+    }
+
+    // ---------- Сравнение лотерей ----------
+
+    private fun addGamesCard() {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(card)
+                cornerRadius = 24f
+            }
+            setPadding(24, 20, 24, 20)
+        }
+        box.addView(sectionLabel("Сравнение лотерей"))
+        box.addView(label("Рейтинг по шансу выиграть не меньше указанной суммы — мелкие призы ниже порога не считаются"))
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        row.addView(label("мин. выигрыш, ₽:"))
+        val minInput = android.widget.EditText(this).apply {
+            setText("100")
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setTextColor(textPrimary)
+            setBackgroundColor(bg)
+            setPadding(16, 4, 16, 4)
+            setEms(5)
+        }
+        row.addView(minInput)
+        box.addView(row)
+
+        val out = TextView(this).apply {
+            setTextColor(textSecondary)
+            textSize = 13f
+            setPadding(0, 12, 0, 0)
+        }
+        val btn = Button(this).apply {
+            text = "Показать рейтинг"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(accent)
+            setOnClickListener {
+                val mp = minInput.text.toString().toDoubleOrNull()
+                if (mp == null || mp <= 0) {
+                    out.text = "Введите сумму числом, например 100"
+                } else {
+                    out.text = LottoLogic.gamesRating(mp).joinToString("\n")
+                }
+            }
+        }
+        box.addView(btn)
+        box.addView(out)
+
+        val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT)
+        lp.setMargins(0, 12, 0, 12)
+        root.addView(box, lp)
     }
 
     // ---------- Мои комбинации ----------

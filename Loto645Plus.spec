@@ -5,7 +5,8 @@ a = Analysis(
     ['lotto645_app.py'],
     pathex=[],
     binaries=[],
-    datas=[('analysis/archive_full.json', '.'), ('analysis/archive_6x45.json', '.')],
+    datas=[('analysis/archive_full.json', '.'), ('analysis/archive_6x45.json', '.'),
+           ('iconwork/loto.ico', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -35,4 +36,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='iconwork/loto.ico',
 )

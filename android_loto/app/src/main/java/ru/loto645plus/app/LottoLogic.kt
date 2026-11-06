@@ -344,6 +344,73 @@ object LottoLogic {
         }
     }
 
+    // ---------- Сравнение лотерей ----------
+
+    private fun pmatch(n: Int, k: Int, d: Int, j: Int): Double {
+        fun comb(nn: Int, kk: Int): Double {
+            var r = 1.0
+            for (i in 1..kk) r = r * (nn - kk + i) / i
+            return r
+        }
+        return comb(d, j) * comb(n - d, k - j) / comb(n, k)
+    }
+
+    private data class GameInfo(val name: String, val price: Int,
+                                val cats: List<Pair<Int, Double>>, val jack: Long)
+
+    /** Рейтинг: шанс выиграть ≥ minPrize ₽ за ставку. Призы примерные. */
+    fun gamesRating(minPrize: Double): List<String> {
+        val games = mutableListOf<GameInfo>()
+        run { // 5 из 36: 5 из 36 + 1 из 4
+            fun p(j: Int) = pmatch(36, 5, 5, j)
+            games.add(GameInfo("5 из 36", 75, listOf(
+                75 to p(2), 750 to p(3), 7500 to p(4), 100000 to p(5) * 3 / 4), 1507968))
+        }
+        run { // 6 из 45 и Плюс
+            fun p(j: Int) = pmatch(45, 6, 6, j)
+            games.add(GameInfo("6 из 45", 50, listOf(
+                50 to p(2), 400 to p(3), 2000 to p(4), 100000 to p(5)), 8145060))
+            games.add(GameInfo("6 из 45 Плюс", 100, listOf(
+                100 to p(2), 500 to p(3), 3000 to p(4), 100000 to p(5)), 8145060))
+        }
+        run { // 7 из 49
+            fun p(j: Int) = pmatch(49, 7, 7, j)
+            games.add(GameInfo("7 из 49", 40, listOf(
+                150 to p(3), 1500 to p(4), 15000 to p(5), 1500000 to p(6)), 85900584))
+        }
+        run { // 4 из 20 (упрощённо по одному полю)
+            fun p(j: Int) = pmatch(20, 4, 4, j)
+            games.add(GameInfo("4 из 20", 250, listOf(
+                250 to p(2), 1000 to p(3), 3000 to p(4)), 23474025))
+        }
+        run { // Рапидо: 8 из 20 + 1 из 4
+            fun p(j: Int) = pmatch(20, 8, 8, j)
+            games.add(GameInfo("Рапидо", 60, listOf(
+                60 to p(4) * 3 / 4, 200 to p(5) * 3 / 4, 600 to p(5) / 4,
+                1000 to p(6) * 3 / 4, 3000 to p(6) / 4,
+                4000 to p(7) * 3 / 4, 15000 to p(7) / 4,
+                60000 to p(8) * 3 / 4), 503880))
+        }
+        run { // Всё или ничего (12 из 24)
+            fun p(j: Int) = pmatch(24, 12, 12, j) + pmatch(24, 12, 12, 12 - j)
+            games.add(GameInfo("Всё или ничего", 100, listOf(
+                100 to p(4), 300 to p(3), 1500 to p(2), 15000 to p(1)), 1352078))
+        }
+        val rows = games.map { g ->
+            Pair(g, g.cats.filter { it.first >= minPrize }.sumOf { it.second } +
+                    1.0 / g.jack)
+        }.sortedByDescending { it.second }
+        val out = mutableListOf("Шанс выиграть ≥ ${"%.0f".format(minPrize)} ₽ за ставку:")
+        rows.forEachIndexed { i, row ->
+            val g = row.first
+            val p = row.second
+            val jf = String.format("%,d", g.jack).replace(',', ' ')
+            out.add("${i + 1}. ${g.name} (ставка ${g.price} ₽) — 1 к ${"%.1f".format(1 / p)}, суперприз 1 к $jf")
+        }
+        out.add("Суммы призов примерные, по опубликованным правилам — могут меняться.")
+        return out
+    }
+
     fun backtest(combo: List<Int>, archPlus: List<Draw>, archOld: List<Draw>): String {
         fun scan(arch: List<Draw>, name: String): String {
             val hits = IntArray(7) // совпадения 0..6

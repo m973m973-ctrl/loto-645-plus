@@ -5,6 +5,7 @@
 
     <application
         android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.Loto645Plus"
         android:allowBackup="false"
         android:supportsRtl="true">
