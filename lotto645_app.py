@@ -485,6 +485,133 @@ def check_4x20(f1, f2, draw):
     return {"a": a, "b": b, "win": win, "super": sup}
 
 
+# ---------- Прогнозы для других лотерей ----------
+
+def load_archive(game):
+    """Встроенный архив тиражей игры: archive_<game>.json."""
+    p = resource_path("archive_%s.json" % game)
+    if not p:
+        return []
+    try:
+        return json.load(open(p, encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _hot_overdue(seqs, lo, hi, window=100):
+    """Горячие (частые за window) и давно не выпадавшие числа диапазона."""
+    from collections import Counter
+    c = Counter()
+    for s in seqs[-window:]:
+        c.update(s)
+    last_seen = {}
+    for i, s in enumerate(seqs):
+        for x in s:
+            last_seen[x] = i
+    hot = sorted(range(lo, hi + 1), key=lambda x: (-c[x], x))
+    cold = sorted(range(lo, hi + 1), key=lambda x: (last_seen.get(x, -1), x))
+    return hot, cold
+
+
+def _mix(hot, cold, k, hot_first=True, primary=None):
+    if primary is None:
+        primary = k // 2 + (k % 2 if hot_first else 0)
+    out = []
+    a, b = (hot, cold) if hot_first else (cold, hot)
+    for x in a:
+        if len(out) >= primary:
+            break
+        out.append(x)
+    for x in b:
+        if len(out) >= k:
+            break
+        if x not in out:
+            out.append(x)
+    return sorted(out)
+
+
+# Числа, которые игроки отмечают реже всего (даты 1–12/1–31 популярны,
+# красивые ряды тоже) — «антитолпа» для полей 1–20.
+UNPOP20 = [13, 16, 17, 18, 19, 20, 14, 15]
+
+
+def predict_rapido(draws):
+    """Три прогноза для Рапидо + честный бэктест walk-forward."""
+    seq = [d["p"][:8] for d in draws if len(d.get("p", [])) >= 9]
+    hot, cold = _hot_overdue(seq, 1, 20)
+    main = _mix(hot, cold, 8)
+    alt = _mix(hot, cold, 8, hot_first=False, primary=5)
+    crowd = sorted(UNPOP20[:8])
+    from collections import Counter
+    c2 = Counter(d["p"][8] for d in draws[-100:] if len(d.get("p", [])) >= 9)
+    f2 = c2.most_common(1)[0][0] if c2 else 1
+    # бэктест: прогноз считается только по прошлым тиражам
+    wins = 0
+    total = 0
+    hits_sum = 0
+    tail = seq[-400:]
+    for i in range(max(100, len(seq) - 400), len(seq)):
+        h, cl = _hot_overdue(seq[:i], 1, 20)
+        combo = _mix(h, cl, 8)
+        a = len(set(combo) & set(seq[i]))
+        hits_sum += a
+        total += 1
+        if a >= 5:
+            wins += 1
+    bt = ("за %d тиражей: среднее совпадений %.2f (случайно 3.20), "
+          "призовых (5+) — %.1f%% (случайно ~%.1f%%)" %
+          (total, hits_sum / max(1, total), wins / max(1, total) * 100,
+           _p_ge(20, 8, 8, 5) * 100))
+    return {"main": main, "alt": alt, "crowd": crowd, "f2": f2,
+            "hot": hot[:8], "cold": cold[:8], "bt": bt}
+
+
+def predict_4x20(draws):
+    """Три прогноза 4 из 20 (по полям) + бэктест."""
+    sa = [d["a"] for d in draws if len(d.get("a", [])) == 4]
+    sb = [d["b"] for d in draws if len(d.get("b", [])) == 4]
+    ha, ca = _hot_overdue(sa, 1, 20)
+    hb, cb = _hot_overdue(sb, 1, 20)
+    main = (_mix(ha, ca, 4), _mix(hb, cb, 4))
+    alt = (_mix(ha[1:], ca[1:], 4), _mix(hb[1:], cb[1:], 4))
+    crowd = (sorted(UNPOP20[:4]), sorted(UNPOP20[4:8]))
+    wins = 0
+    total = 0
+    for i in range(max(100, len(sa) - 400), len(sa)):
+        h1, c1 = _hot_overdue(sa[:i], 1, 20)
+        h2, c2 = _hot_overdue(sb[:i], 1, 20)
+        f1 = _mix(h1, c1, 4)
+        f2 = _mix(h2, c2, 4)
+        a = len(set(f1) & set(sa[i]))
+        b = len(set(f2) & set(sb[i]))
+        total += 1
+        if a >= 2 or b >= 2:
+            wins += 1
+    p1 = _p_ge(20, 4, 4, 2)
+    bt = ("за %d тиражей: выигрышных ставок %.1f%% "
+          "(случайно ~%.1f%%)" %
+          (total, wins / max(1, total) * 100,
+           (1 - (1 - p1) ** 2) * 100))
+    return {"main": main, "alt": alt, "crowd": crowd,
+            "hot": ha[:6], "cold": ca[:6], "bt": bt}
+
+
+def bingo_stats(draws, lastn=30):
+    """Горячие и редкие бочонки за последние lastn тиражей."""
+    from collections import Counter
+    c = Counter()
+    for d in draws[-lastn:]:
+        drawn = set()
+        for r in d.get("r", []):
+            drawn.update(r)
+        if not drawn:  # запасной вариант: 1..90 минус неразыгранные
+            drawn = set(range(1, 91)) - set(d.get("np", []))
+        c.update(drawn)
+    hot = sorted(range(1, 91), key=lambda x: (-c[x], x))[:10]
+    cold = sorted(range(1, 91), key=lambda x: (c[x], x))[:10]
+    return hot, cold
+
+
 # ---------- Рапидо ----------
 # Поле 1: 8 чисел из 20; поле 2: 1 число из 4. Тиражи каждые ~15 минут.
 # Классическая таблица выигрышей: от 4 совпадений в поле 1 при угаданном
@@ -981,6 +1108,32 @@ class App(tk.Tk):
         _btn(f, "Проверить билет", lambda: self._check_bingo(state),
              color=GREEN).pack(anchor="w", padx=16, pady=(0, 16))
 
+        self._build_bingo_stats(f, game)
+
+    def _build_bingo_stats(self, f, game):
+        draws = load_archive(game)
+        if not draws:
+            return
+        hot, cold = bingo_stats(draws, lastn=30)
+        _lbl(f, "Статистика бочонков (архив %d тиражей)" % len(draws),
+             fg=FG, size=12, bold=True).pack(anchor="w", padx=16,
+                                             pady=(10, 2))
+        self._combo_row(f, "Горячие бочонки (30 тиражей)", hot)
+        self._combo_row(f, "Редко выпадавшие", cold, color=GOLD)
+        _lbl(f, "В Русском лото и Жилищной числа в билете напечатаны "
+                "заранее — комбинацию не выбирают. Как выбрать билет "
+                "с наилучшими условиями:", size=9).pack(anchor="w", padx=16,
+                                                        pady=(8, 0))
+        _lbl(f, "• Берите билеты, где числа равномерно покрывают все "
+                "десятки (1–90), без скученности в одном диапазоне.\n"
+                "• Избегайте «красивых» билетов (круглые числа, узоры) — "
+                "их чаще берут другие, приз делить придётся с большим "
+                "числом людей.\n"
+                "• Частота бочонков прошлых тиражей на будущее не влияет: "
+                "мешок не помнит, что выпадало. Честный шанс любого приза "
+                "≈ 1 из 2,5 билетов независимо от чисел.", size=9,
+             ).pack(anchor="w", padx=16, pady=(2, 12))
+
     def _load_game_draw(self, state):
         state["out"].config(text="Загрузка…")
         threading.Thread(target=self._load_game_draw_bg, args=(state,),
@@ -1115,6 +1268,77 @@ class App(tk.Tk):
              lambda: self._check_rapido(state),
              color=GREEN).pack(anchor="w", padx=16, pady=(0, 16))
 
+        self._build_rapido_predictions(f)
+
+    # ---------- прогнозные панели ----------
+
+    def _combo_row(self, f, caption, combo, color=FG, extra=None):
+        _lbl(f, caption).pack(anchor="w", padx=16)
+        row = tk.Frame(f, bg=BG)
+        row.pack(anchor="w", padx=16, pady=2)
+        for n in combo:
+            Ball(row, n, size=30, outline=color, fg=color).pack(side="left",
+                                                                padx=2)
+        if extra:
+            _lbl(row, extra, size=9).pack(side="left", padx=8)
+
+    def _build_rapido_predictions(self, f):
+        draws = load_archive("rapido")
+        if not draws:
+            return
+        p = predict_rapido(draws)
+        _lbl(f, "Прогнозы (по архиву %d тиражей)" % len(draws), fg=FG,
+             size=12, bold=True).pack(anchor="w", padx=16, pady=(10, 2))
+        self._combo_row(f, "🎯 Основная: 4 горячих + 4 давних", p["main"],
+                        extra="+ поле 2: %d" % p["f2"])
+        self._combo_row(f, "🔄 Запасная: 5 давних + 3 горячих", p["alt"],
+                        color=GOLD, extra="+ поле 2: %d" % p["f2"])
+        self._combo_row(f, "🕵️ Антитолпа: редко отмечаемые числа",
+                        p["crowd"], color=GREEN,
+                        extra="приз делить реже придётся")
+        _lbl(f, "Горячие (100 тиражей): " +
+             " ".join(map(str, p["hot"])), size=9).pack(anchor="w", padx=16,
+                                                        pady=(6, 0))
+        _lbl(f, "Давно не выпадали: " +
+             " ".join(map(str, p["cold"])), size=9).pack(anchor="w", padx=16)
+        _lbl(f, "Честный бэктест: " + p["bt"], size=9).pack(anchor="w",
+                                                            padx=16,
+                                                            pady=(6, 0))
+        _lbl(f, "Все комбинации равновероятны — прогноз не повышает шанс "
+                "выигрыша, «антитолпа» только уменьшает делёж приза.",
+             size=9).pack(anchor="w", padx=16, pady=(4, 12))
+
+    def _build_4x20_predictions(self, f):
+        draws = load_archive("4x20")
+        if not draws:
+            return
+        p = predict_4x20(draws)
+        _lbl(f, "Прогнозы (по архиву %d тиражей)" % len(draws), fg=FG,
+             size=12, bold=True).pack(anchor="w", padx=16, pady=(10, 2))
+        _lbl(f, "🎯 Основная: 2 горячих + 2 давних в каждом поле",
+             ).pack(anchor="w", padx=16)
+        row = tk.Frame(f, bg=BG)
+        row.pack(anchor="w", padx=16, pady=2)
+        for n in p["main"][0]:
+            Ball(row, n, size=30).pack(side="left", padx=2)
+        _lbl(row, "|", size=12).pack(side="left", padx=6)
+        for n in p["main"][1]:
+            Ball(row, n, size=30).pack(side="left", padx=2)
+        self._combo_row(f, "🔄 Запасная: следующие по списку горячие/давние",
+                        p["alt"][0], color=GOLD,
+                        extra="поле 2: " + " ".join(map(str, p["alt"][1])))
+        self._combo_row(f, "🕵️ Антитолпа", p["crowd"][0], color=GREEN,
+                        extra="поле 2: " + " ".join(map(str, p["crowd"][1])))
+        _lbl(f, "Горячие поля 1: " + " ".join(map(str, p["hot"])) +
+             " · давно не было: " + " ".join(map(str, p["cold"])),
+             size=9).pack(anchor="w", padx=16, pady=(6, 0))
+        _lbl(f, "Честный бэктест: " + p["bt"], size=9).pack(anchor="w",
+                                                            padx=16,
+                                                            pady=(6, 0))
+        _lbl(f, "Все комбинации равновероятны — прогноз не повышает шанс "
+                "выигрыша, «антитолпа» только уменьшает делёж приза.",
+             size=9).pack(anchor="w", padx=16, pady=(4, 12))
+
     def _check_rapido(self, state):
         import re
         d = state.get("draw")
@@ -1179,6 +1403,8 @@ class App(tk.Tk):
         _btn(f, "Проверить ставку",
              lambda: self._check_4x20(state),
              color=GREEN).pack(anchor="w", padx=16, pady=(0, 16))
+
+        self._build_4x20_predictions(f)
 
     def _check_4x20(self, state):
         import re

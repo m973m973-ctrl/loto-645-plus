@@ -6,6 +6,8 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[('analysis/archive_full.json', '.'), ('analysis/archive_6x45.json', '.'),
+           ('analysis/archive_ruslotto.json', '.'), ('analysis/archive_rapido.json', '.'),
+           ('analysis/archive_4x20.json', '.'), ('analysis/archive_gzhl.json', '.'),
            ('iconwork/loto.ico', '.')],
     hiddenimports=[],
     hookspath=[],
