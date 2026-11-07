@@ -136,6 +136,10 @@ class MainActivity : Activity() {
 
         addBetCard()
         addGamesCard()
+        addRapidoCard()
+        add4x20Card()
+        addBingoCard("archive_ruslotto.json", "Русское лото")
+        addBingoCard("archive_gzhl.json", "Жилищная лотерея")
 
         root.addView(sectionLabel("Частоты чисел за последние 100 тиражей"))
         chart = FreqChartView(this)
@@ -208,6 +212,82 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams.WRAP_CONTENT)
         lp.setMargins(0, 12, 0, 12)
         root.addView(box, lp)
+    }
+
+    // ---------- Прогнозы других лотерей ----------
+
+    private fun newCard(): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(card)
+                cornerRadius = 24f
+            }
+            setPadding(24, 20, 24, 20)
+        }
+    }
+
+    private fun attachCard(box: LinearLayout) {
+        val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT)
+        lp.setMargins(0, 12, 0, 12)
+        root.addView(box, lp)
+    }
+
+    private fun addRapidoCard() {
+        val p = try {
+            LottoLogic.predictRapido(assets.open("archive_rapido.json"))
+        } catch (e: Exception) { return }
+        val box = newCard()
+        box.addView(sectionLabel("Рапидо — прогнозы"))
+        box.addView(label("Поле 1: 8 чисел из 20 · поле 2: 1 из 4 · тиражи каждые 15 минут"))
+        box.addView(label("🎯 Основная (4 горячих + 4 давних) + поле 2: ${p.f2}"))
+        box.addView(ballsRow(p.main))
+        box.addView(label("🔄 Запасная (5 давних + 3 горячих)"))
+        box.addView(ballsRow(p.alt, null, gold))
+        box.addView(label("🕵️ Антитолпа"))
+        box.addView(ballsRow(p.crowd, null, green))
+        box.addView(label("Горячие: ${p.hot.joinToString(" ")}\nДавно не выпадали: ${p.cold.joinToString(" ")}"))
+        box.addView(label("Честный бэктест: ${p.bt}"))
+        attachCard(box)
+    }
+
+    private fun add4x20Card() {
+        val p = try {
+            LottoLogic.predict4x20(assets.open("archive_4x20.json"))
+        } catch (e: Exception) { return }
+        val box = newCard()
+        box.addView(sectionLabel("4 из 20 — прогнозы"))
+        box.addView(label("4 числа в каждом из двух полей · суперприз за 4+4"))
+        box.addView(label("🎯 Основная (поле 1 | поле 2)"))
+        box.addView(ballsRow(p.main1))
+        box.addView(ballsRow(p.main2))
+        box.addView(label("🔄 Запасная"))
+        box.addView(ballsRow(p.alt1, null, gold))
+        box.addView(ballsRow(p.alt2, null, gold))
+        box.addView(label("🕵️ Антитолпа"))
+        box.addView(ballsRow(p.crowd1, null, green))
+        box.addView(ballsRow(p.crowd2, null, green))
+        box.addView(label("Горячие: ${p.hot.joinToString(" ")} · давно не выпадали: ${p.cold.joinToString(" ")}"))
+        box.addView(label("Честный бэктест: ${p.bt}"))
+        attachCard(box)
+    }
+
+    private fun addBingoCard(asset: String, title: String) {
+        val (hot, cold) = try {
+            LottoLogic.bingoStats(assets.open(asset))
+        } catch (e: Exception) { return }
+        val box = newCard()
+        box.addView(sectionLabel("$title — статистика бочонков"))
+        box.addView(label("Тиражи по воскресеньям · числа в билете напечатаны заранее"))
+        box.addView(label("Горячие бочонки (30 тиражей):"))
+        box.addView(ballsRow(hot.take(5)))
+        box.addView(ballsRow(hot.drop(5)))
+        box.addView(label("Редко выпадавшие:"))
+        box.addView(ballsRow(cold.take(5), null, gold))
+        box.addView(ballsRow(cold.drop(5), null, gold))
+        box.addView(label("Как выбрать билет: числа равномерно по всем десяткам, без «красивых» узоров — так приз реже придётся делить. Частота прошлых тиражей на будущее не влияет."))
+        attachCard(box)
     }
 
     // ---------- Мои комбинации ----------
@@ -584,12 +664,12 @@ class MainActivity : Activity() {
         setPadding(0, 24, 0, 8)
     }
 
-    private fun ballsRow(main: List<Int>, plus: Int? = null): LinearLayout {
+    private fun ballsRow(main: List<Int>, plus: Int? = null, color: Int = accent): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        for (n in main) row.addView(ball(n, accent))
+        for (n in main) row.addView(ball(n, color))
         if (plus != null) row.addView(ball(plus, hot))
         return row
     }

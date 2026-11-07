@@ -411,6 +411,150 @@ object LottoLogic {
         return out
     }
 
+    // ---------- Прогнозы для других лотерей ----------
+
+    val UNPOP20 = listOf(13, 16, 17, 18, 19, 20, 14, 15)
+
+    fun hotOverdue(seqs: List<List<Int>>, lo: Int, hi: Int,
+                   window: Int = 100): Pair<List<Int>, List<Int>> {
+        val freq = HashMap<Int, Int>()
+        for (s in seqs.takeLast(window)) for (x in s) freq[x] = (freq[x] ?: 0) + 1
+        val lastSeen = HashMap<Int, Int>()
+        seqs.forEachIndexed { i, s -> for (x in s) lastSeen[x] = i }
+        val range = (lo..hi).toList()
+        val hot = range.sortedWith(compareBy({ -(freq[it] ?: 0) }, { it }))
+        val cold = range.sortedWith(compareBy({ lastSeen[it] ?: -1 }, { it }))
+        return Pair(hot, cold)
+    }
+
+    fun mix(hot: List<Int>, cold: List<Int>, k: Int,
+            hotFirst: Boolean = true, primary: Int? = null): List<Int> {
+        val prim = primary ?: (k / 2 + if (hotFirst) k % 2 else 0)
+        val out = ArrayList<Int>()
+        val a = if (hotFirst) hot else cold
+        val b = if (hotFirst) cold else hot
+        for (x in a) {
+            if (out.size >= prim) break
+            out.add(x)
+        }
+        for (x in b) {
+            if (out.size >= k) break
+            if (x !in out) out.add(x)
+        }
+        return out.sorted()
+    }
+
+    private fun pge(n: Int, k: Int, d: Int, jmin: Int): Double {
+        var s = 0.0
+        for (j in jmin..minOf(k, d)) s += pmatch(n, k, d, j)
+        return s
+    }
+
+    data class RapidoPred(val main: List<Int>, val alt: List<Int>,
+                          val crowd: List<Int>, val f2: Int,
+                          val hot: List<Int>, val cold: List<Int>, val bt: String)
+
+    fun predictRapido(input: InputStream): RapidoPred {
+        val arr = JSONArray(input.readText2())
+        val seq = ArrayList<List<Int>>()
+        val f2seq = ArrayList<Int>()
+        for (i in 0 until arr.length()) {
+            val p = arr.getJSONObject(i).getJSONArray("p")
+            if (p.length() < 9) continue
+            seq.add((0 until 8).map { p.getInt(it) })
+            f2seq.add(p.getInt(8))
+        }
+        val (hot, cold) = hotOverdue(seq, 1, 20)
+        val main = mix(hot, cold, 8)
+        val alt = mix(hot, cold, 8, hotFirst = false, primary = 5)
+        val crowd = UNPOP20.take(8).sorted()
+        val f2 = f2seq.takeLast(100).groupingBy { it }.eachCount()
+            .maxByOrNull { it.value }?.key ?: 1
+        var wins = 0; var total = 0; var hits = 0
+        val from = maxOf(100, seq.size - 400)
+        for (i in from until seq.size) {
+            val (h, c) = hotOverdue(seq.subList(0, i), 1, 20)
+            val combo = mix(h, c, 8)
+            val a = combo.count { it in seq[i] }
+            hits += a; total++
+            if (a >= 5) wins++
+        }
+        val bt = "за $total тиражей: ср. совпадений %.2f (случайно 3.20), призовых %.1f%% (случайно ~%.1f%%)"
+            .format(hits.toDouble() / maxOf(1, total),
+                wins * 100.0 / maxOf(1, total), pge(20, 8, 8, 5) * 100)
+        return RapidoPred(main, alt, crowd, f2, hot.take(8), cold.take(8), bt)
+    }
+
+    data class X4Pred(val main1: List<Int>, val main2: List<Int>,
+                      val alt1: List<Int>, val alt2: List<Int>,
+                      val crowd1: List<Int>, val crowd2: List<Int>,
+                      val hot: List<Int>, val cold: List<Int>, val bt: String)
+
+    fun predict4x20(input: InputStream): X4Pred {
+        val arr = JSONArray(input.readText2())
+        val sa = ArrayList<List<Int>>()
+        val sb = ArrayList<List<Int>>()
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            sa.add((0 until 4).map { o.getJSONArray("a").getInt(it) })
+            sb.add((0 until 4).map { o.getJSONArray("b").getInt(it) })
+        }
+        val (ha, ca) = hotOverdue(sa, 1, 20)
+        val (hb, cb) = hotOverdue(sb, 1, 20)
+        val main1 = mix(ha, ca, 4); val main2 = mix(hb, cb, 4)
+        val alt1 = mix(ha.drop(1), ca.drop(1), 4)
+        val alt2 = mix(hb.drop(1), cb.drop(1), 4)
+        val crowd1 = UNPOP20.take(4).sorted()
+        val crowd2 = UNPOP20.drop(4).take(4).sorted()
+        var wins = 0; var total = 0
+        val from = maxOf(100, sa.size - 400)
+        for (i in from until sa.size) {
+            val (h1, c1) = hotOverdue(sa.subList(0, i), 1, 20)
+            val (h2, c2) = hotOverdue(sb.subList(0, i), 1, 20)
+            val f1 = mix(h1, c1, 4); val f2 = mix(h2, c2, 4)
+            total++
+            if (f1.count { it in sa[i] } >= 2 || f2.count { it in sb[i] } >= 2) wins++
+        }
+        val p1 = pge(20, 4, 4, 2)
+        val bt = "за $total тиражей: выигрышных ставок %.1f%% (случайно ~%.1f%%)"
+            .format(wins * 100.0 / maxOf(1, total), (1 - (1 - p1) * (1 - p1)) * 100)
+        return X4Pred(main1, main2, alt1, alt2, crowd1, crowd2,
+            ha.take(6), ca.take(6), bt)
+    }
+
+    fun bingoStats(input: InputStream, lastn: Int = 30): Pair<List<Int>, List<Int>> {
+        val arr = JSONArray(input.readText2())
+        val freq = HashMap<Int, Int>()
+        val n = arr.length()
+        for (i in maxOf(0, n - lastn) until n) {
+            val o = arr.getJSONObject(i)
+            val drawn = HashSet<Int>()
+            if (o.has("r")) {
+                val r = o.getJSONArray("r")
+                for (j in 0 until r.length()) {
+                    val rr = r.getJSONArray(j)
+                    for (t in 0 until rr.length()) drawn.add(rr.getInt(t))
+                }
+            }
+            if (drawn.isEmpty() && o.has("np")) {
+                val np = o.getJSONArray("np")
+                val skip = (0 until np.length()).map { np.getInt(it) }.toSet()
+                drawn.addAll((1..90).filter { it !in skip })
+            }
+            for (x in drawn) freq[x] = (freq[x] ?: 0) + 1
+        }
+        val range = (1..90).toList()
+        val hot = range.sortedWith(compareBy({ -(freq[it] ?: 0) }, { it })).take(10)
+        val cold = range.sortedWith(compareBy({ freq[it] ?: 0 }, { it })).take(10)
+        return Pair(hot, cold)
+    }
+
+    private fun InputStream.readText2(): String {
+        val sb = StringBuilder()
+        BufferedReader(InputStreamReader(this, Charsets.UTF_8)).forEachLine { sb.append(it) }
+        return sb.toString()
+    }
+
     fun backtest(combo: List<Int>, archPlus: List<Draw>, archOld: List<Draw>): String {
         fun scan(arch: List<Draw>, name: String): String {
             val hits = IntArray(7) // совпадения 0..6
