@@ -138,7 +138,7 @@ object LottoLogic {
         return sb.toString()
     }
 
-    fun analyze(draws: List<Draw>, archPlus: List<Draw>, archOld: List<Draw>): AnalysisResult {
+    fun analyze(draws: List<Draw>, archPlus: List<Draw>): AnalysisResult {
         val last100 = draws.takeLast(100)
         val freq = IntArray(46)
         for (d in last100) for (x in d.main) freq[x]++
@@ -175,9 +175,9 @@ object LottoLogic {
             comboAlt = a,
             comboCrowd = comboCrowd,
             freqLast100 = freq,
-            backtestMain = backtest(m, archPlus, archOld),
-            backtestAlt = backtest(a, archPlus, archOld),
-            backtestCrowd = backtest(comboCrowd, archPlus, archOld)
+            backtestMain = backtest(m, archPlus),
+            backtestAlt = backtest(a, archPlus),
+            backtestCrowd = backtest(comboCrowd, archPlus)
         )
     }
 
@@ -277,13 +277,16 @@ object LottoLogic {
         val p5 = p(5) + p6
         val p4 = p(4) + p5
         val p3 = p(3) + p4
-        val oneIn = String.format("%,d", (full / combos).toLong()).replace(',', ' ')
+        val oneInMain = String.format("%,d", (full / combos).toLong()).replace(',', ' ')
+        val oneInSuper = String.format("%,d", (4 * full / combos).toLong()).replace(',', ' ')
         val totalStr = if (total == total.toLong().toDouble())
             String.format("%,d", total.toLong()).replace(',', ' ')
         else "%.0f".format(total)
-        return "$n чисел = $combos комбинаций · стоимость $totalStr ₽\n" +
-                "Шанс суперприза (6 из 6): 1 к $oneIn (${"%.4f".format(p6 * 100)}%)\n" +
-                "Поймать 5+ чисел тиража: ${"%.2f".format(p5 * 100)}% · " +
+        return "$n основных чисел + 1 число поля 2 = $combos комбинаций · стоимость $totalStr ₽\n" +
+                "Шанс угадать 6 основных: 1 к $oneInMain (${"%.4f".format(p6 * 100)}%)\n" +
+                "Шанс суперприза Плюс (6+1): 1 к $oneInSuper (${"%.4f".format(p6 / 4 * 100)}%)\n" +
+                "При нескольких числах поля 2 число комбинаций и цена умножаются на их количество.\n" +
+                "Поймать 5+ основных чисел: ${"%.2f".format(p5 * 100)}% · " +
                 "4+: ${"%.1f".format(p4 * 100)}% · 3+: ${"%.1f".format(p3 * 100)}%\n" +
                 (if (ppl > 1) {
                     val pp = if (total / ppl == (total / ppl).toLong().toDouble())
@@ -366,12 +369,13 @@ object LottoLogic {
             games.add(GameInfo("5 из 36", 75, listOf(
                 75 to p(2), 750 to p(3), 7500 to p(4), 100000 to p(5) * 3 / 4), 1507968))
         }
-        run { // 6 из 45 и Плюс
+        run { // Две самостоятельные игры с разными правилами
             fun p(j: Int) = pmatch(45, 6, 6, j)
-            games.add(GameInfo("6 из 45", 50, listOf(
-                50 to p(2), 400 to p(3), 2000 to p(4), 100000 to p(5)), 8145060))
+            games.add(GameInfo("6 из 45", 70, listOf(
+                70 to p(2), 560 to p(3), 3500 to p(4), 140000 to p(5)), 8145060))
             games.add(GameInfo("6 из 45 Плюс", 100, listOf(
-                100 to p(2), 500 to p(3), 3000 to p(4), 100000 to p(5)), 8145060))
+                100 to p(2), 500 to p(3), 10000 to p(4), 150000 to p(5),
+                5000000 to p(6) * 3 / 4), 32580240))
         }
         run { // 7 из 49
             fun p(j: Int) = pmatch(49, 7, 7, j)
@@ -555,23 +559,20 @@ object LottoLogic {
         return sb.toString()
     }
 
-    fun backtest(combo: List<Int>, archPlus: List<Draw>, archOld: List<Draw>): String {
-        fun scan(arch: List<Draw>, name: String): String {
-            val hits = IntArray(7) // совпадения 0..6
-            for (d in arch) {
-                val c = combo.count { it in d.main }
-                hits[c]++
-            }
-            val sb = StringBuilder(name).append(": ")
-            var any = false
-            for (k in 6 downTo 2) if (hits[k] > 0) {
-                sb.append("$k совп. — ${hits[k]} раз; ")
-                any = true
-            }
-            if (!any) sb.append("совпадений 2+ не было")
-            return sb.toString()
+    /** Проверка строго по архиву Плюс, без подмешивания классической 6 из 45. */
+    fun backtest(combo: List<Int>, archPlus: List<Draw>): String {
+        val hits = IntArray(7) // совпадения 0..6
+        for (d in archPlus) {
+            val c = combo.count { it in d.main }
+            hits[c]++
         }
-        return scan(archPlus, "Плюс (${archPlus.size} тир.)") + "\n" +
-                scan(archOld, "Старая 6/45 (${archOld.size} тир.)")
+        val sb = StringBuilder("6 из 45 Плюс (${archPlus.size} тир.): ")
+        var any = false
+        for (k in 6 downTo 2) if (hits[k] > 0) {
+            sb.append("$k совп. — ${hits[k]} раз; ")
+            any = true
+        }
+        if (!any) sb.append("совпадений 2+ не было")
+        return sb.toString()
     }
 }

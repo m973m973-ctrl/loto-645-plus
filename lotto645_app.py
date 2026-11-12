@@ -72,14 +72,17 @@ def _games():
     p = lambda j: _pmatch(36, 5, 5, j)
     g.append(("5 из 36", 75, [(75, p(2)), (750, p(3)), (7500, p(4)),
                               (100000, p(5) * 3 / 4)], 1507968, ""))
-    # 6 из 45
+    # Спортлото «6 из 45»: одно поле, суперприз за 6 основных чисел.
     p = lambda j: _pmatch(45, 6, 6, j)
-    g.append(("6 из 45", 50, [(50, p(2)), (400, p(3)), (2000, p(4)),
-                              (100000, p(5))], 8145060, ""))
-    # 6 из 45 Плюс
-    p = lambda j: _pmatch(45, 6, 6, j)
-    g.append(("6 из 45 Плюс", 100, [(100, p(2)), (500, p(3)), (3000, p(4)),
-                                    (100000, p(5))], 8145060, ""))
+    g.append(("6 из 45", 70, [(70, p(2)), (560, p(3)), (3500, p(4)),
+                              (140000, p(5))], 8145060,
+              "одно поле 6 из 45; суперприз — 6 совпадений"))
+    # Спортлото «6 из 45 Плюс»: 6 из 45 + 1 из 4, самостоятельная игра.
+    g.append(("6 из 45 Плюс", 100, [(100, p(2)), (500, p(3)), (10000, p(4)),
+                                    (150000, p(5)), (5000000, p(6) * 3 / 4)],
+              32580240,
+              "два поля: 6 из 45 + 1 из 4; 6+0 — приз 5 млн ₽, "
+              "суперприз — 6+1"))
     # 7 из 49
     p = lambda j: _pmatch(49, 7, 7, j)
     g.append(("7 из 49", 40, [(150, p(3)), (1500, p(4)), (15000, p(5)),
@@ -169,23 +172,22 @@ def resource_path(name):
 _HISTORY = None
 
 def history():
-    """Все тиражи обеих игр: [(множество чисел), ...]."""
+    """Только тиражи «6 из 45 Плюс»: [(множество чисел), ...]."""
     global _HISTORY
     if _HISTORY is None:
         _HISTORY = []
-        for name in ("archive_full.json", "archive_6x45.json"):
-            p = resource_path(name)
-            if p:
-                try:
-                    for d in json.load(open(p, encoding="utf-8")):
-                        _HISTORY.append(set(d["main"]))
-                except Exception:
-                    pass
+        p = resource_path("archive_full.json")
+        if p:
+            try:
+                for d in json.load(open(p, encoding="utf-8")):
+                    _HISTORY.append(set(d["main"]))
+            except Exception:
+                pass
     return _HISTORY
 
 
 def backtest(combo):
-    """Совпадения комбинации со всей историей обеих игр."""
+    """Совпадения комбинации только с историей «6 из 45 Плюс»."""
     t = set(combo)
     res = {3: 0, 4: 0, 5: 0, 6: 0}
     for s in history():
@@ -299,6 +301,9 @@ def update_log(all_draws, keep=100):
         log = json.load(open(log_path(), encoding="utf-8"))
     except Exception:
         log = []
+    # Старые версии могли смешать две игры в одном журнале. Такие записи
+    # не используем: журнал заново строится только по тиражам Плюс.
+    log = [e for e in log if e.get("game") == "6x45plus"]
     known = {e["n"] for e in log}
     all_draws = [d for d in all_draws if d.get("main")]
     start = max(50, len(all_draws) - keep)
@@ -309,7 +314,7 @@ def update_log(all_draws, keep=100):
         if not pred:
             continue
         d = all_draws[i]
-        log.append({"n": d["n"], "date": d.get("date", ""),
+        log.append({"game": "6x45plus", "n": d["n"], "date": d.get("date", ""),
                     "draw": d["main"], "plus": d.get("plus", 0),
                     "main": pred["main"], "alt": pred["alt"],
                     "crowd": pred["crowd"],
@@ -635,10 +640,10 @@ def check_rapido(f1_8, f2_1, draw):
     return {"a": a, "b": b, "win": win, "super": sup}
 
 
-def all_6x45(fetched):
-    """Полная история 6x45: встроенный архив + свежие тиражи из сети."""
+def all_6x45plus(fetched):
+    """Полная история только Плюс: встроенный архив + свежие тиражи."""
     out = {}
-    p = resource_path("archive_6x45.json")
+    p = resource_path("archive_full.json")
     if p:
         try:
             for d in json.load(open(p, encoding="utf-8")):
@@ -950,7 +955,13 @@ class App(tk.Tk):
         self.cold = tk.Frame(right, bg=BG); self.cold.pack(anchor="w", pady=2)
 
         self.plus_lbl = _lbl(f, "")
-        self.plus_lbl.pack(anchor="w", padx=16, pady=(0, 12))
+        self.plus_lbl.pack(anchor="w", padx=16, pady=(0, 6))
+        _lbl(f, "Это отдельная игра «6 из 45 Плюс»: 6 чисел из 45 + 1 из 4.\n"
+                "Основная шестёрка — 1 : 8 145 060; суперприз за 6+1 — "
+                "1 : 32 580 240; 6+0 — отдельный приз.\n"
+                "Прогнозы, журнал и бэктест используют только тиражи Плюс, "
+                "без классической «6 из 45».", size=9).pack(
+                    anchor="w", padx=16, pady=(0, 12))
 
     # ---------- вкладка «Инструменты» ----------
 
@@ -1444,7 +1455,7 @@ class App(tk.Tk):
             draws = fetch_draws()
             stats = analyze(draws)
             bt = {k: backtest(stats[k]) for k in ("main", "alt", "crowd")}
-            log = update_log(all_6x45(draws))
+            log = update_log(all_6x45plus(draws))
             self.after(0, lambda: self._render(draws, stats, bt, None, log))
         except Exception as e:
             self.after(0, lambda: self._render(None, None, None, e, None))
@@ -1452,10 +1463,11 @@ class App(tk.Tk):
     @staticmethod
     def _bt_text(bt):
         if not history():
-            return "архив истории не найден — бэктест недоступен"
+            return "архив Плюс не найден — бэктест недоступен"
         rep = "полный повтор был!" if bt[6] else "полного повтора не было"
-        return ("по истории %d тиражей: 5 чисел — %d, 4 — %d, 3 — %d; %s"
-                % (len(history()), bt[5], bt[4], bt[3], rep))
+        return ("по истории Плюс (%d тиражей): 5 чисел — %d, 4 — %d, "
+                "3 — %d; %s" %
+                (len(history()), bt[5], bt[4], bt[3], rep))
 
     def _render(self, draws, st, bt, err, log=None):
         self.btn.config(state="normal", text="Обновить")
@@ -1643,13 +1655,19 @@ class App(tk.Tk):
         p5 = p(5) + p6
         p4 = p(4) + p5
         p3 = p(3) + p4
-        one_in = round(full / combos)
+        one_in_main = round(full / combos)
+        one_in_super = round(4 * full / combos)
         lines = [
-            "%d чисел = %d комбинаций · стоимость %s ₽" %
+            "Плюс: %d основных чисел + 1 число поля 2 = %d комбинаций · "
+            "стоимость %s ₽" %
             (n, combos, ("%s" % total).rstrip("0").rstrip(".")),
-            "Шанс суперприза (6 из 6): 1 к %s (%.4f%%)" %
-            (f"{one_in:,}".replace(",", " "), p6 * 100),
-            "Поймать 5+ чисел тиража: %.2f%% · 4+: %.1f%% · 3+: %.1f%%" %
+            "Шанс угадать 6 основных: 1 к %s (%.4f%%)" %
+            (f"{one_in_main:,}".replace(",", " "), p6 * 100),
+            "Шанс суперприза Плюс (6+1): 1 к %s (%.4f%%)" %
+            (f"{one_in_super:,}".replace(",", " "), p6 / 4 * 100),
+            "Если выбрать несколько чисел поля 2, число комбинаций и цена "
+            "умножаются на их количество.",
+            "Поймать 5+ основных чисел: %.2f%% · 4+: %.1f%% · 3+: %.1f%%" %
             (p5 * 100, p4 * 100, p3 * 100),
         ]
         if ppl > 1:

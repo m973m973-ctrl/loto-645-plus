@@ -7,6 +7,7 @@ ui_dump.xml
 *.apk
 *.exe
 android_loto/.gradle/
+android_loto/.android-build/
 android_loto/build/
 android_loto/app/build/
 android_loto/local.properties

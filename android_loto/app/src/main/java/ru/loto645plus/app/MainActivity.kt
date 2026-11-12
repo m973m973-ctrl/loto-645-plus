@@ -37,7 +37,6 @@ class MainActivity : Activity() {
     private lateinit var chart: FreqChartView
 
     private var archPlus: List<Draw>? = null
-    private var archOld: List<Draw>? = null
     private var logData: List<PredEntry> = emptyList()
     private var logBox: LinearLayout? = null
     private var logFilter2plus = true
@@ -58,7 +57,7 @@ class MainActivity : Activity() {
         setContentView(scroll)
 
         root.addView(title("Лото 6 из 45 Плюс — анализ"))
-        status = label("Загрузка архивов…")
+        status = label("Загрузка архива Плюс…")
         root.addView(status)
 
         progress = ProgressBar(this).apply { visibility = View.GONE }
@@ -67,26 +66,23 @@ class MainActivity : Activity() {
         thread {
             try {
                 archPlus = LottoLogic.loadAssetDraws(assets.open("archive_full.json"))
-                archOld = LottoLogic.loadAssetDraws(assets.open("archive_6x45.json"))
                 runOnUiThread { refresh() }
             } catch (e: Exception) {
-                runOnUiThread { status.text = "Ошибка чтения встроенных архивов: ${e.message}" }
+                runOnUiThread { status.text = "Ошибка чтения архива Плюс: ${e.message}" }
             }
         }
     }
 
     private fun refresh() {
         progress.visibility = View.VISIBLE
-        status.text = "Проверяю новые тиражи на сайте Столото…"
+        status.text = "Проверяю новые тиражи Плюс на сайте Столото…"
         thread {
             try {
-                // Докачиваем новые тиражи поверх встроенных архивов
+                // Докачиваем только тиражи Плюс; обычная 6 из 45 — другая игра.
                 val newPlus = LottoLogic.fetchNew("6x45plus", archPlus!!.maxOf { it.n })
-                val newOld = LottoLogic.fetchNew("6x45", archOld!!.maxOf { it.n })
                 val plus = archPlus!! + newPlus
-                val old = archOld!! + newOld
-                // Анализ — по последним ~300 тиражам Плюс, бэктест — по полным архивам
-                val result = LottoLogic.analyze(plus.takeLast(300), plus, old)
+                // Анализ и бэктест используют один и тот же архив Плюс.
+                val result = LottoLogic.analyze(plus.takeLast(300), plus)
                 // Журнал: прогнозы прошлых тиражей против реально выпавших чисел
                 val log = try {
                     LottoLogic.updateLog(plus, File(filesDir, "predictions_log.json"))
@@ -94,7 +90,7 @@ class MainActivity : Activity() {
                 logData = log
                 runOnUiThread {
                     progress.visibility = View.GONE
-                    render(result, newPlus.size, newOld.size)
+                    render(result, newPlus.size)
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -106,7 +102,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun render(r: AnalysisResult, newPlus: Int, newOld: Int) {
+    private fun render(r: AnalysisResult, newPlus: Int) {
         root.removeAllViews()
         root.addView(title("Лото 6 из 45 Плюс — анализ"))
 
@@ -117,10 +113,9 @@ class MainActivity : Activity() {
 
         addMyCard()
 
-        val news = if (newPlus + newOld > 0)
-            " • докачано новых: +$newPlus (Плюс), +$newOld (старая)"
-        else " • архив актуален"
-        root.addView(info("Архив Плюс: ${archPlus!!.size + newPlus} тир. • старая 6/45: ${archOld!!.size + newOld} тир.$news"))
+        val news = if (newPlus > 0) " • докачано новых: +$newPlus" else " • архив актуален"
+        root.addView(info("Архив «6 из 45 Плюс»: ${archPlus!!.size + newPlus} тир.$news\n" +
+                "Тиражи обычной «6 из 45» в прогнозы и проверку не входят."))
 
         root.addView(comboCard("🎯 Основная комбинация", "3 горячих + 2 давно не выпадавших + 1 частое",
             r.comboMain, r.backtestMain))
@@ -146,7 +141,11 @@ class MainActivity : Activity() {
         chart.setData(r.freqLast100)
         root.addView(chart)
 
-        root.addView(info("Честное напоминание: все комбинации равновероятны (1 : 8 145 060), статистика не повышает шанс выигрыша — помогает только «антитолпа» за счёт меньшего дележа призов."))
+        root.addView(info("Правила именно Плюс: 6 чисел из 45 + 1 число из 4. " +
+                "Шанс угадать основную шестёрку — 1 : 8 145 060; суперприз за 6+1 — " +
+                "1 : 32 580 240; 6+0 — отдельный приз. Все комбинации равновероятны, " +
+                "статистика не повышает шанс выигрыша. «Антитолпа» помогает только " +
+                "уменьшить вероятный делёж приза."))
 
         val version = packageManager.getPackageInfo(packageName, 0).versionName
         root.addView(info("Лото 6/45+ Анализ, версия $version\nРазработчик: Сергей Коп\nПриложение не является азартной игрой, не принимает ставки и не связано с оператором лотереи. Используются только открытые опубликованные результаты тиражей."))

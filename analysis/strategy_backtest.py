@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Бэктест стратегий 6/45 по полному архиву: каждая комбинация выбирается
-только по тиражам ДО текущего (walk-forward), сравнение со случайным выбором."""
+"""Бэктест стратегий для «6 из 45 Плюс» по её полному архиву.
+
+Каждая комбинация выбирается только по тиражам ДО текущего (walk-forward).
+Архив классической «6 из 45» сюда намеренно не подмешивается.
+"""
 import json, random
 from collections import Counter
 
-with open('analysis/archive_6x45.json', encoding='utf-8') as f:
+with open('analysis/archive_full.json', encoding='utf-8') as f:
     draws = json.load(f)
 draws = sorted(draws, key=lambda d: d['n'])
 mains = [sorted(d['main']) for d in draws]
